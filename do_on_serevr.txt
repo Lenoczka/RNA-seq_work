@@ -1,0 +1,87 @@
+ssh логин@адрессервера
+пароль
+
+cd /path/
+
+
+gunzip *.fastq.gz
+fastqc *.fastq
+
+ls -la |grep "_R1_" |wc -l 
+
+bash file.sh
+#for file in `ls ./*.fastq`;do
+newname=`basename $file | sed  "s/.fastq/_trimmed.fastq/"`
+trimmomatic PE -phred64 $file   LEADING:3 TRAILING:3 SLIDINGWINDOW:4:30 MINLEN:36  > ./trimmed/"$newname"
+done
+
+
+wget  ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_41/GRCh38.primary_assembly.genome.fa.gz
+gunzip GRCh38.primary_assembly.genome.fa.gz
+wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_41/gencode.v41.annotation.gtf.gz
+gunzip gencode.v41.annotation.gtf.gz
+
+
+#Generating genome indexes files HUMAN 50 
+STAR \
+--runMode genomeGenerate \
+--genomeDir /path/fastq/references \
+--genomeFastaFiles /path/fastq/references/GRCh38.primary_assembly.genome.fa \
+--sjdbGTFfile /path/fastq/references/gencode.v41.annotation.gtf \
+--sjdbOverhang 50 \
+--runThreadN 40 \
+--outTmpDir /path/fastq/references/startmp
+
+# STAR v.2.6.1a 
+#Mapping HUMAN reads to the human genome (paired-end)
+
+# name 
+A102_S33_L001_R1_001.fastq
+
+#for  paired reads
+for base in "*_L001_*"; do F=./${base}R1_001.fastq; R=./${base}R2_001.fastq; STAR --runMode alignReads --genomeDir /path/fastq/references \
+--readFilesIn $F $R --outReadsUnmapped Fastx  --outSAMstrandField intronMotif  --outFilterMultimapNmax 15 \
+ --outFilterMismatchNmax 6 --runThreadN 19 --outSAMtype BAM SortedByCoordinate  \
+--outFileNamePrefix ./aligned/ ; done   
+
+#for some paired reads files
+dir= /path/Cushing_117_120 
+for i in c117 c120; do 
+STAR --runMode alignReads --genomeDir /path/fastq/references \
+--readFilesIn  $dir${i}_R1_.fastq $dir${i}_R2_.fastq --outReadsUnmapped Fastx  --outSAMstrandField intronMotif \
+--outFilterMultimapNmax 15 --outFilterMismatchNmax 6 --runThreadN 19 --outSAMtype BAM SortedByCoordinate  \
+--outFileNamePrefix ./$i. ; done   
+ 
+
+
+#for single reads
+for i in $(ls ./ ); do STAR \
+--runMode alignReads \
+--genomeDir  /path/fastq/references \
+--readFilesIn  ./$i    \
+--outReadsUnmapped Fastx  \
+--outSAMstrandField intronMotif  \
+--outFilterMultimapNmax 15  \
+--outFilterMismatchNmax 6 \
+--outSAMtype BAM SortedByCoordinate  \
+--runThreadN 17 \
+--outFileNamePrefix ./mapped/$i. ; done
+
+
+# post-processing the alignments
+# indexing 
+
+samtools view A111_S28.Aligned.sortedByCoord.out.bam | less
+
+ls ./*.bam | xargs -n1 -P5 samtools index 
+
+# calculating coverage for vizualization
+bamCoverage -b ./*.bam -o ./coverage/
+
+
+#featureCounts v1.6.4 
+                                                                                                      
+featureCounts -a ../fastq/references/gencode.v41.annotation.gtf  -p -s 2 -T 8 -o ./Counts.txt ./*.Aligned.sortedByCoord.out.bam
+
+
+multiqc ../fastq/mapped
